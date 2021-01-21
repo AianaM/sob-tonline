@@ -1,0 +1,831 @@
+-----------------------------------------------------------
+-- Общие положения
+-----------------------------------------------------------
+Шлюз реализуется в виде SOAP и/или REST сервиса
+
+SOAP:
+	все методы выглядят как XXX(Login, Password, Session, Request)
+
+входные параметры
+
+	Login									string
+	Password								string
+	Session									string
+	Request									string				строка запроса в виде XML
+
+	параметры Login и Password можно передавать пустыми строками, если реальные их значения передавать как basic web authorization
+	параметр Session можно передавать пустой строкой, если передавать этот параметр через HTTP заголовок x-tonline-session
+
+выходные параметры любого метода
+
+	Answer									string				строка ответа в виде XML
+
+	в любом ответе есть следующие поля
+		dtNow - дата формирования ответа
+		ErrCode - код ошибки 0, если все хорошо и не равен 0, если произошла ошибка
+		ErrMsg - появится рядом с ErrCode, если произойдет ошибка и будет содержать текстовое описание проблемы
+		любые незаполенные поля могут быть опущены в ответе
+
+REST:
+	все методы работают в виде POST запросов
+	некоторые запросы могут быть сформированы в виде GET запросов, тогда параметры передаются в виде GET параметров
+
+	Login и Password			передаются как basic web authorization
+	Session						передается через HTTP заголовок x-tonline-session
+	Request						тело POST запроса
+	Answer						тело возвращаемого ответа
+
+-----------------------------------------------------------
+-- Примерный алгоритм работы
+-----------------------------------------------------------
+1)	Заранее скачать информацию о всех мероприятих на нужный период и периодически ее обновлять
+2)	При выборе покупетелем конкретного мероприятия получить список доступных сейчас мест в нем для продажи
+3)	Покупатель выделяет места (аналог корзины покупок)
+4)	После того, как требуемые места все выделены создается заказ. Места считаются забронированными. Заказ можно отредактировать (убрать из него места, добавить новые…)
+5)	Произвести проверку готовности к оплате
+6)	Провести оплату в платежной системе
+7)	Оплатить заказ
+8)	При необходимости можно сделать отмену оплаченного заказа. Производиться в 2 этапа - проверка до совершения операции по карте и фиксация операции возврата
+
+-----------------------------------------------------------
+-- получение информации о мероприятиях
+-----------------------------------------------------------
+SOAP: S_Info(Login, Password, Session, Request)
+REST: /REST/Seance
+
+получение информации по всем доступным мероприятиям
+
+#Request
+
+	<Request IsShowHall="0" IsShowPrice="0" IsShowAngle="0" IsShowCancel="1"/>
+
+#Answer
+
+	<Answer dtNow="2020-11-04T15:17:36.380">
+	  <Seance Id="2" dtSeance="2021-01-03T12:00:00" Show="Концерт XXX" Theatre="Тест" Hall="Сцена1" AllCount="550" FreeCount="0" MinPrice="1000.00" MaxPrice="2000.00" Autor="Автор" Director="Режисер" />
+	  <Seance Id="10" dtSeance="2020-11-04T19:00:00" Show="Спектакль 1" Theatre="Тест" Hall="Сцена1" AllCount="400" FreeCount="0" MinPrice="0.00" MaxPrice="3000.00" Genre="Мероприятие" />
+	  <Seance Id="11" dtSeance="2020-11-05T19:00:00" Show="Спектакль 2" Theatre="Тест" Hall="Сцена1" AllCount="400" FreeCount="0" MinPrice="0.00" MaxPrice="3000.00" Genre="Мероприятие" />
+	  ...
+	</Answer>
+
+получение подробной информации по конкретному мероприятию
+
+#Request
+
+	<Request IsShowHall="1" IsShowPrice="1" IsShowAngle="1" IsShowCancel="1"><Seance Id="2"/></Request>
+	
+#Answer
+
+	<Answer dtNow="2020-11-04T15:19:58.647">
+	  <Seance Id="2" dtSeance="2021-01-03T12:00:00" Show="Концерт XXX" Theatre="Тест" Hall="Сцена1" AllCount="550" FreeCount="0" MinPrice="1000.00" MaxPrice="2000.00" Autor="Автор" Director="Режисер" />
+		<Hall>
+		  <Sector Id="2" Name="Сектор 1">
+			<Seat Id="951" Row="1" Seat="1" Price="1000.00" X="153" Y="234" Angle="30"/>
+			<Seat Id="952" Row="1" Seat="2" Price="1000.00" X="177" Y="234" />
+			<Seat Id="953" Row="1" Seat="3" Price="1000.00" X="199" Y="234" />
+			...
+		  </Sector>
+		  <Sector Id="3" Name="Сектор 2">
+			<Seat Id="1101" Row="1" Seat="1" Price="2000.00" X="33" Y="360" />
+			<Seat Id="1102" Row="1" Seat="2" Price="2000.00" X="56" Y="360" />
+			<Seat Id="1103" Row="1" Seat="3" Price="2000.00" X="79" Y="360" />
+			...
+		  </Sector>
+		  ...
+		</Hall>
+	  </Seance>
+	</Answer>
+
+#Request
+
+	IsShowHall						отображать схему зала
+	IsShowPrice						отображать цены
+	IsShowAngle						отображать углы поворота мест
+	IsShowCancel					отображать отмененные мероприятия
+
+#Answer
+
+	Seance->Id						уникальный идентификатор мероприятия
+	Seance->dtSeance				дата проведения мкероприятия
+	Seance->Show					наименование представления
+	Seance->Theatre					театр
+	Seance->TheatreAddress			адрес театра
+	Seance->Hall					зал
+	Seance->HallAddress				адрес зала
+	Seance->AllCount				всего мест в зале
+	Seance->FreeCount				мест свободно
+	Seance->MinPrice				минимальная цена
+	Seance->MaxPrice				максимальная цена
+	Seance->Genre					жанр
+	Seance->Autor					автор
+	Seance->Director				директор
+	Seance->IsPremiere				признак премьеры
+	Seance->Annotation				описание
+	Seance->SupplierId				поставщик мероприятия
+	Seance->SupplierName			
+	Seance->SupplierINN
+	Seance->SupplierAddress
+	Seance->IsCancel				меропритие отменено
+	Seance->IsPointArrival			возможно накопление баллов по бонусной программе
+	Seance->IsPointPayment			возможна оплата бонусными баллами
+	Sector->Id						сектор
+	Sector->Name
+	Seat->Id						уникальный идентификатор места
+	Seat->Row						ряд
+	Seat->Seat						место
+	Seat->Price						цена
+	Seat->X							координаты
+	Seat->Y
+	Seat->Angle
+	Seat->IsEnable					место доступно для продажи
+
+-----------------------------------------------------------
+-- получение информации о текущих доступных для заказа/продажи местах
+-----------------------------------------------------------
+SOAP: S_Seat_Enabled(Login, Password, Session, Request)
+REST: /REST/Seance/Seat/Enabled
+
+#Request
+
+	<Request IsIncludeSelected="1"><Seance Id="15"/></Request>
+
+	IsIncludeSelected				включать в список доступных выбранные мной места
+
+#Answer
+
+	<Answer dtNow="2020-11-04T15:45:40.757">
+	  <Seance Id="15">
+		<Seat Id="10353" Price="1000.00" />
+		<Seat Id="10354" Price="1000.00" />
+		<Seat Id="10355" Price="1000.00" />
+		...
+	  </Seance>
+	</Answer>
+
+	Seance->Id						идентификатор мероприятия
+	Seat->Id						идентификатор места
+	Seat->Price						цена места
+	Seat->dtDrop					если место выбранно мной, то когда выбор будет автоматически снят
+
+-----------------------------------------------------------
+-- выделение мест
+-----------------------------------------------------------
+SOAP: S_Seat_Select(Login, Password, Session, Request)
+REST: /REST/Seance/Seat/Select
+
+#Request
+	
+	<Request IsIncludeSelected="1"><Seat Id="10353"/><Seat Id="10354"/></Request>
+
+	IsIncludeSelected				отображать информацию по всем выбранным местам
+
+#Answer
+
+	<Answer dtNow="2020-11-04T16:06:14.970">
+		<Seats>
+			<Seat Id="10353" Price="1000.00" dtDrop="2020-11-04T16:11:15.027" />
+			<Seat Id="10354" Price="1000.00" dtDrop="2020-11-04T16:11:15.027" />
+		</Seats>
+		<Select>
+			<Seat Id="10353" />
+			<Seat Id="10354" />
+		</Select>
+	</Answer>
+
+	Seats->Seat->Id					список всех выделенных мест->идентификатор места
+	Seats->Seat->Price				список всех выделенных мест->цена места
+	Seats->Seat->dtDrop				список всех выделенных мест->когда выбор будет автоматически снят
+	Select->Seat->Id				список добавленных данной операцией мест->идентификатор места
+
+-----------------------------------------------------------
+-- снятие выделения с мест
+-----------------------------------------------------------
+SOAP: S_Seat_Unselect(Login, Password, Session, Request)
+REST: /REST/Seance/Seat/Unselect
+
+#Request
+
+	<Request IsShowAll="1"><Seat Id="10353"/><Seat Id="10354"/></Request>		снятие выделения с конкретных мест
+	<Request IsShowAll="1"/>													снятие выделения со всех мест
+
+	IsIncludeSelected				отображать информацию по всем выбранным местам
+
+#Answer
+
+	<Answer dtNow="2020-11-04T16:08:21.660">
+		<Seats>
+			<Seat Id="10999" Price="1000.00" dtDrop="2020-11-04T16:11:15.027" />
+		</Seats>
+		<Unselect>
+			<Seat Id="10353" />
+			<Seat Id="10354" />
+		</Unselect>
+	</Answer>
+
+	Seats->Seat->Id					список всех выделенных мест->идентификатор места
+	Seats->Seat->Price				список всех выделенных мест->цена места
+	Seats->Seat->dtDrop				список всех выделенных мест->когда выбор будет автоматически снят
+	Unselect>Seat->Id				список убранных данной операцией мест->идентификатор места
+
+-----------------------------------------------------------
+-- получение информации о текущих выбраных местах
+-----------------------------------------------------------
+SOAP: S_Seat_Selected(Login, Password, Session, Request: String)
+REST: /REST/Seance/Seat/Selected
+
+#Request
+
+	<Request/>						может просто отсутствовать
+
+#Answer
+
+	<Answer dtNow="2020-11-04T16:13:28.767">
+		<Seats>
+			<Seat Id="10353" Price="1000.00" dtDrop="2020-11-04T16:17:03.050" />
+			<Seat Id="10354" Price="1000.00" dtDrop="2020-11-04T16:17:03.050" />
+		</Seats>
+	</Answer>
+	
+	Seats->Seat->Id					список всех выделенных мест->идентификатор места
+	Seats->Seat->Price				список всех выделенных мест->цена места
+	Seats->Seat->dtDrop				список всех выделенных мест->когда выбор будет автоматически снят
+
+-----------------------------------------------------------
+-- создание заказа
+-----------------------------------------------------------
+SOAP: S_Order_Create(Login, Password, Session, Request)
+REST: /REST/Seance/Order/Create
+
+#Request
+
+	<Request>
+		<Order>
+			<Info SiteOrderId="XXX" Comment="прмер" LifeTime="30"/>
+			<Customer LoyaltyProgramCard="" Name1="Иванов" Name2="Иван" Name3="Иванович" Phone="+79261234567" EMail="ivan@test.com"/>
+			<Delivery Address="Мой адрес не дом и не улица" City="Москва" Metro="Каширская"/>
+			<Seats>
+				<Seat Id="10353"/>
+				<Seat Id="10354"/>
+			</Seats>
+		</Order>
+	</Request>
+
+	Info->SiteOrderId				идентификатор создаваемого заказа на стороне сайта (необязательно)
+	Info->Comment					комментарий к заказу (необязательно)
+	Info->LifeTime					кол-во минут через которое заказ будет анулирован, если не будет оплачен (необязательно)
+	
+	Customer->LoyaltyProgramCard	номер карты лояльности, если указан, то прочая информация по зрителю не обязательна
+	Customer->Name1					фамилия
+	Customer->Name2					имя
+	Customer->Name3					отчество
+	Customer->Phone					телефон
+	Customer->EMail					почта
+
+	Delivery->Address				адрес доставки заказа (необязательно)
+	Delivery->City					город доставки заказа (необязательно)
+	Delivery->Metro					метро доставки заказа (необязательно)
+
+	Seats->Id						идентификатор места
+
+#Answer
+
+	<Answer dtNow="2020-11-04T16:40:56.833">
+		<Order Id="4">
+			<Info SiteOrderId="XXX" Comment="прмер" />
+			<Customer Name="Иванов Иван Иванович" Phone="+79261234567" EMail="ivan@test.com" />
+			<Delivery Address="Мой адрес не дом и не улица" City="Москва" Metro="Каширская" />
+			<Seats>
+				<Seance Id="15" dtSeance="2020-12-25T19:00:00" TheatreId="1" Theatre="Тест" Hall="Сцена1" Show="Я от бабушки ушел" IsPointArrival="1" IsPointPayment="1">
+					<Sector Id="4" Name="Сектор Т01">
+						<Seat Id="10353" Row="3" Seat="6" SoldCost="1000.00" MaxPoints="300.0000" dtDrop="2020-11-04T17:10:56.247" Status="ORDERED" />
+						<Seat Id="10354" Row="3" Seat="7" SoldCost="1000.00" MaxPoints="300.0000" dtDrop="2020-11-04T17:10:56.247" Status="ORDERED" />
+					</Sector>
+				</Seance>
+			</Seats>
+		</Order>
+	</Answer>
+
+	Order->Id						идентификатор заказа
+	Info->TransactionId				идентификатор транзакции оплаты
+	Info->SiteOrderId				идентификатор заказа на стороне сайта
+	Info->Comment					комментарий к заказу
+	Customer->Name					зритель
+	Customer->Phone
+	Customer->EMail
+	Customer->Points				кол-во активированных бонусных баллов на счету пользователя
+	Delivery->Address				доставка
+	Delivery->City
+	Delivery->Metro
+	Seats->Seance->Id				идентификатор мероприятия
+	Seats->Seance->dtSeance			дата мероприятия
+	Seats->Seance->TheatreId		театр
+	Seats->Seance->Theatre
+	Seats->Seance->TheatreAddress
+	Seats->Seance->Hall				зал
+	Seats->Seance->HallAddress
+	Seats->Seance->Show				наименование мероприятия
+	Seats->Seance->SupplierId		поставщик мероприятия
+	Seats->Seance->SupplierName
+	Seats->Seance->SupplierINN
+	Seats->Seance->SupplierAddress
+	Seats->Seance->IsPointArrival	доступно накопление баллов
+	Seats->Seance->IsPointPayment	возможна оплата бонусами
+	Seats->Sector->Id				сектор
+	Seats->Sector->Name
+	Seats->Seat->Id					место
+	Seats->Seat->Row
+	Seats->Seat->Seat
+	Seats->Seat->SoldCost			сумма для продажи
+	Seats->Seat->RefundCost			сумма для возврата с учетом удержания (если есть)
+	Seats->Seat->MaxPoints			сколько максимально можно оплатить баллами
+	Seats->Seat->dtDrop				когда место будет удалено из брони, если не будет оплаченно
+	Seats->Seat->Barcode			баркод для билета
+	Seats->Seat->Status				текущий статус места в заказе
+		ORDERED		Забронировано
+		PAID		Оплачено
+		GIVEN OUT	Выдано
+		CANCELLED	Отменено
+		REFUNDED	Возвращено
+	Add->Seat->Id					добавленные места в заказ текущей операцией
+	Remove->Seat->Id				удаленные места из заказа текущей операцией
+
+-----------------------------------------------------------
+-- добавление мест в заказ
+-----------------------------------------------------------
+SOAP: S_Order_Add(Login, Password, Session, Request)
+REST: /REST/Seance/Order/Add
+
+полностью идентична S_Order_Create, список мест содержит места, добавляемые в заказ
+
+Request->IsShowSeance				выводить информацию о мероприятии
+Request->Order->Id					обязательный параметр, идентификатор существующего заказа
+
+-----------------------------------------------------------
+-- удаление мест из заказа
+-----------------------------------------------------------
+SOAP: S_Order_Remove(Login, Password, Session, Request)
+REST: /REST/Seance/Order/Remove
+
+полностью идентична S_Order_Create, список мест содержит места, удаляемые из заказа
+если список мест будет пуст, из заказа будут удалены все неоплаченные места
+
+Request->IsShowSeance				выводить информацию о мероприятии
+Request->Order->Id					обязательный параметр, идентификатор существующего заказа
+
+-----------------------------------------------------------
+-- просмотр заказа
+-----------------------------------------------------------
+SOAP: S_Order_Info(Login, Password, Session, Request)
+REST: /REST/Seance/Order
+
+#Request
+
+	<Request><Order Id="4"/></Request>
+
+	Order->Id						идентификатор заказа
+
+#Answer
+
+	<Answer dtNow="2020-11-04T17:07:32.090">
+		<Order Id="4">
+			<Info SiteOrderId="XXX" Comment="прмер" />
+			<Customer Name="Иванов Иван Иванович" Phone="+79261234567" EMail="ivan@test.com" />
+			<Delivery Address="Мой адрес не дом и не улица" City="Москва" Metro="Каширская" />
+			<Seats>
+				<Seance Id="15" dtSeance="2020-12-25T19:00:00" TheatreId="1" Theatre="Тест" Hall="Сцена1" Show="Я от бабушки ушел" IsPointArrival="1" IsPointPayment="1">
+					<Sector Id="4" Name="Сектор Т01">
+						<Seat Id="10353" Row="3" Seat="6" SoldCost="1000.00" MaxPoints="300.0000" dtDrop="2020-11-04T17:10:56.247" Status="ORDERED" />
+						<Seat Id="10354" Row="3" Seat="7" SoldCost="1000.00" MaxPoints="300.0000" dtDrop="2020-11-04T17:10:56.247" Status="ORDERED" />
+					</Sector>
+				</Seance>
+			</Seats>
+		</Order>
+	</Answer>
+	
+	Order->Id						идентификатор заказа
+	Info->TransactionId				идентификатор транзакции оплаты
+	Info->SiteOrderId				идентификатор заказа на стороне сайта
+	Info->Comment					комментарий к заказу
+	Customer->Name					зритель
+	Customer->Phone
+	Customer->EMail
+	Customer->Points				кол-во активированных бонусных баллов на счету пользователя
+	Delivery->Address				доставка
+	Delivery->City
+	Delivery->Metro
+	Seats->Seance->Id				идентификатор мероприятия
+	Seats->Seance->dtSeance			дата мероприятия
+	Seats->Seance->TheatreId		театр
+	Seats->Seance->Theatre
+	Seats->Seance->TheatreAddress
+	Seats->Seance->Hall				зал
+	Seats->Seance->HallAddress
+	Seats->Seance->Show				наименование мероприятия
+	Seats->Seance->SupplierId		поставщик мероприятия
+	Seats->Seance->SupplierName
+	Seats->Seance->SupplierINN
+	Seats->Seance->SupplierAddress
+	Seats->Seance->IsPointArrival	доступно накопление баллов
+	Seats->Seance->IsPointPayment	возможна оплата бонусами
+	Seats->Sector->Id				сектор
+	Seats->Sector->Name
+	Seats->Seat->Id					место
+	Seats->Seat->Row
+	Seats->Seat->Seat
+	Seats->Seat->SoldCost			сумма для продажи
+	Seats->Seat->RefundCost			сумма для возврата с учетом удержания (если есть)
+	Seats->Seat->MaxPoints			сколько максимально можно оплатить баллами
+	Seats->Seat->dtDrop				когда место будет удалено из брони, если не будет оплаченно
+	Seats->Seat->Barcode			баркод для билета
+	Seats->Seat->Status				текущий статус места в заказе
+		ORDERED		Забронировано
+		PAID		Оплачено
+		GIVEN OUT	Выдано
+		CANCELLED	Отменено
+		REFUNDED	Возвращено
+	Add->Seat->Id					добавленные места в заказ текущей операцией
+	Remove->Seat->Id				удаленные места из заказа текущей операцией
+
+-----------------------------------------------------------
+-- начало продажи заказа
+-----------------------------------------------------------
+SOAP: S_Order_BeginSold(Login, Password, Session, Request)
+REST: /REST/Seance/Order/BeginSold
+
+осуществляет финальную проверку заказа
+необходимо вызывать непосредственно перед операцией проведения оплаты заказа через платежную систему
+после этого вызова заказ не будет отменен даже если он просречен - система ждет либо факта оплаты, либо отмены заказа
+
+#Request
+
+	<Request>
+		<Order Id="4">
+			<Info SiteOrderId="XXX" Comment="прмер"/>
+			<Customer LoyaltyProgramCard="" Name1="Иванов" Name2="Иван" Name3="Иванович" Phone="+79261234567" EMail="ivan@test.com"/>
+			<Delivery Address="Мой адрес не дом и не улица" City="Москва" Metro="Каширская"/>
+			<Seats>
+			  <Seance Id="15">
+				<Sector Id="4" Name="Сектор Т01">
+				  <Seat Id="10353" Row="3" Seat="6" Cost="1000.00" Points="0"/>
+				  <Seat Id="10354" Row="3" Seat="7" Cost="1000.00" Pints="0"/>
+				</Sector>
+			  </Seance>
+			</Seats>
+		</Order>
+	</Request>
+
+	Order->Id							идентификатор заказа
+
+	Info->SiteOrderId					идентификатор создаваемого заказа на стороне сайта (необязательно)
+	Info->Comment						комментарий к заказу (необязательно)
+
+	Customer->LoyaltyProgramCard		номер карты лояльности, если указан, то прочая информация по зрителю не обязательна
+	Customer->Name1						фамилия
+	Customer->Name2						имя
+	Customer->Name3						отчество
+	Customer->Phone						телефон
+	Customer->EMail						почта
+
+	Delivery->Address					адрес доставки заказа (необязательно)
+	Delivery->City						город доставки заказа (необязательно)
+	Delivery->Metro						метро доставки заказа (необязательно)
+
+	Seats->Seance->Id					идентификатор сеанса
+	Seats->Seance->Sector->Id			идентификатор сектора
+	Seats->Seance->Sector->Name			наименование сектора
+	
+	Seats->Seance->Sector->Seat->Id		идентификатор места
+	Seats->Seance->Sector->Seat->Row	ряд
+	Seats->Seance->Sector->Seat->Seat	место
+	Seats->Seance->Sector->Seat->Cost	стоимость в рублях
+	Seats->Seance->Sector->Seat->Points	стоимость в баллах
+
+#Answer
+
+	<Answer dtNow="2020-11-04T18:38:45.297">
+		<Order Id="4">
+			<Info SiteOrderId="XXX" Comment="прмер" />
+			<Customer Name="Иванов Иван Иванович" Phone="+79261234567" EMail="ivan@test.com" />
+			<Delivery Address="Мой адрес не дом и не улица" City="Москва" Metro="Каширская" />
+			<Seats>
+				<Seance Id="15" dtSeance="2020-12-25T19:00:00" TheatreId="1" Theatre="Тест" Hall="Сцена1" Show="Я от бабушки ушел" IsPointArrival="1" IsPointPayment="1">
+					<Sector Id="4" Name="Сектор Т01">
+						<Seat Id="10353" Row="3" Seat="6" SoldCost="1000.00" MaxPoints="300.0000" dtDrop="2020-11-04T17:10:56.247" Status="ORDERED" />
+						<Seat Id="10354" Row="3" Seat="7" SoldCost="1000.00" MaxPoints="300.0000" dtDrop="2020-11-04T17:10:56.247" Status="ORDERED" />
+					</Sector>
+				</Seance>
+			</Seats>
+		</Order>
+	</Answer>
+	
+	Order->Id						идентификатор заказа
+	Info->TransactionId				идентификатор транзакции оплаты
+	Info->SiteOrderId				идентификатор заказа на стороне сайта
+	Info->Comment					комментарий к заказу
+	Customer->Name					зритель
+	Customer->Phone
+	Customer->EMail
+	Customer->Points				кол-во активированных бонусных баллов на счету пользователя
+	Delivery->Address				доставка
+	Delivery->City
+	Delivery->Metro
+	Seats->Seance->Id				идентификатор мероприятия
+	Seats->Seance->dtSeance			дата мероприятия
+	Seats->Seance->TheatreId		театр
+	Seats->Seance->Theatre
+	Seats->Seance->TheatreAddress
+	Seats->Seance->Hall				зал
+	Seats->Seance->HallAddress
+	Seats->Seance->Show				наименование мероприятия
+	Seats->Seance->SupplierId		поставщик мероприятия
+	Seats->Seance->SupplierName
+	Seats->Seance->SupplierINN
+	Seats->Seance->SupplierAddress
+	Seats->Seance->IsPointArrival	доступно накопление баллов
+	Seats->Seance->IsPointPayment	возможна оплата бонусами
+	Seats->Sector->Id				сектор
+	Seats->Sector->Name
+	Seats->Seat->Id					место
+	Seats->Seat->Row
+	Seats->Seat->Seat
+	Seats->Seat->SoldCost			сумма для продажи
+	Seats->Seat->RefundCost			сумма для возврата с учетом удержания (если есть)
+	Seats->Seat->MaxPoints			сколько максимально можно оплатить баллами
+	Seats->Seat->dtDrop				когда место будет удалено из брони, если не будет оплаченно
+	Seats->Seat->Barcode			баркод для билета
+	Seats->Seat->Status				текущий статус места в заказе
+		ORDERED		Забронировано
+		PAID		Оплачено
+		GIVEN OUT	Выдано
+		CANCELLED	Отменено
+		REFUNDED	Возвращено
+		
+если указано какое-то кол-во баллов, то стоимость долюжа быть уменьшена на это кол-во баллов
+для применения бонусной программы необходима идентификация пользователя по карте лояльности
+
+-----------------------------------------------------------
+-- завершение продажи заказа
+-----------------------------------------------------------
+SOAP: S_Order_CompleteSold(Login, Password, Session, Request)
+REST: /REST/Seance/Order/CompleteSold
+
+полностью идентичен S_Order_BeginSold
+фиксирует факт оплаты заказа в системе
+если зритель был идентифицирован по карте лояльности, доступно накопление баллов и нет оплаты баллами,
+то на счет покупателя будут начислены бонусные баллы
+
+#Request
+
+	<Request>
+		<Order Id="4">
+			<Info SiteOrderId="XXX" Comment="прмер"/>
+			<Customer LoyaltyProgramCard="" Name1="Иванов" Name2="Иван" Name3="Иванович" Phone="+79261234567" EMail="ivan@test.com"/>
+			<Delivery Address="Мой адрес не дом и не улица" City="Москва" Metro="Каширская"/>
+			<Seats>
+			  <Seance Id="15">
+				<Sector Id="4" Name="Сектор Т01">
+				  <Seat Id="10353" Row="3" Seat="6" Cost="1000.00" Points="0"/>
+				  <Seat Id="10354" Row="3" Seat="7" Cost="1000.00" Pints="0"/>
+				</Sector>
+			  </Seance>
+			</Seats>
+		</Order>
+	</Request>
+
+#Answer
+
+	<Answer dtNow="2020-11-04T18:48:18.380">
+		<Order Id="4">
+			<Info SiteOrderId="XXX" Comment="прмер" />
+			<Customer Name="Иванов Иван Иванович" Phone="+79261234567" EMail="ivan@test.com" />
+			<Delivery Address="Мой адрес не дом и не улица" City="Москва" Metro="Каширская" />
+			<Seats>
+				<Seance Id="15" dtSeance="2020-12-25T19:00:00" TheatreId="1" Theatre="Тест" Hall="Сцена1" Show="Я от бабушки ушел" IsPointArrival="1" IsPointPayment="1">
+					<Sector Id="4" Name="Сектор Т01">
+						<Seat Id="10353" Row="3" Seat="6" SoldCost="1000.00" RefundCost="1000.00" Barcode="9000010353971710" Status="PAID" />
+						<Seat Id="10354" Row="3" Seat="7" SoldCost="1000.00" RefundCost="1000.00" Barcode="9000010354914546" Status="PAID" />
+					</Sector>
+				</Seance>
+			</Seats>
+		</Order>
+	</Answer>
+
+-----------------------------------------------------------
+-- начало возврата
+-----------------------------------------------------------
+SOAP: S_Order_BeginRefund(Login, Password, Session, Request)
+REST: /REST/Seance/Order/BeginRefund
+
+вызывается перед проведением операции по карте для проверки возможности возврата
+и проверки цены возврата
+
+#Request
+
+	<Request>
+		<Order Id="4">
+			<Seats>
+				<Seat Id="10353" Cost="1000.00"/>
+				<Seat Id="10354" Cost="1000.00"/>
+			</Seats>
+		</Order>
+	</Request>
+
+	Cost			Цена возврата, может быть либо ценой продажи, либо ценой с удержанием RefundCost
+
+#Answer
+
+	<Answer dtNow="2020-11-04T19:17:11.110">
+		<Order Id="4">
+			<Info SiteOrderId="XXX" Comment="прмер" />
+			<Customer Name="Иванов Иван Иванович" Phone="+79261234567" EMail="ivan@test.com" />
+			<Delivery Address="Мой адрес не дом и не улица" City="Москва" Metro="Каширская" />
+			<Seats>
+				<Seance Id="15" dtSeance="2020-12-25T19:00:00" TheatreId="1" Theatre="Тест" Hall="Сцена1" Show="Я от бабушки ушел" IsPointArrival="1" IsPointPayment="1">
+					<Sector Id="4" Name="Сектор Т01">
+						<Seat Id="10353" Row="3" Seat="6" SoldCost="1000.00" RefundCost="1000.00" Barcode="9000010353971710" Status="PAID" />
+						<Seat Id="10354" Row="3" Seat="7" SoldCost="1000.00" RefundCost="1000.00" Barcode="9000010354914546" Status="PAID" />
+					</Sector>
+				</Seance>
+			</Seats>
+		</Order>
+	</Answer>
+	
+	Order->Id						идентификатор заказа
+	Info->TransactionId				идентификатор транзакции оплаты
+	Info->SiteOrderId				идентификатор заказа на стороне сайта
+	Info->Comment					комментарий к заказу
+	Customer->Name					зритель
+	Customer->Phone
+	Customer->EMail
+	Customer->Points				кол-во активированных бонусных баллов на счету пользователя
+	Delivery->Address				доставка
+	Delivery->City
+	Delivery->Metro
+	Seats->Seance->Id				идентификатор мероприятия
+	Seats->Seance->dtSeance			дата мероприятия
+	Seats->Seance->TheatreId		театр
+	Seats->Seance->Theatre
+	Seats->Seance->TheatreAddress
+	Seats->Seance->Hall				зал
+	Seats->Seance->HallAddress
+	Seats->Seance->Show				наименование мероприятия
+	Seats->Seance->SupplierId		поставщик мероприятия
+	Seats->Seance->SupplierName
+	Seats->Seance->SupplierINN
+	Seats->Seance->SupplierAddress
+	Seats->Seance->IsPointArrival	доступно накопление баллов
+	Seats->Seance->IsPointPayment	возможна оплата бонусами
+	Seats->Sector->Id				сектор
+	Seats->Sector->Name
+	Seats->Seat->Id					место
+	Seats->Seat->Row
+	Seats->Seat->Seat
+	Seats->Seat->SoldCost			сумма для продажи
+	Seats->Seat->RefundCost			сумма для возврата с учетом удержания (если есть)
+	Seats->Seat->MaxPoints			сколько максимально можно оплатить баллами
+	Seats->Seat->dtDrop				когда место будет удалено из брони, если не будет оплаченно
+	Seats->Seat->Barcode			баркод для билета
+	Seats->Seat->Status				текущий статус места в заказе
+		ORDERED		Забронировано
+		PAID		Оплачено
+		GIVEN OUT	Выдано
+		CANCELLED	Отменено
+		REFUNDED	Возвращено	
+
+-----------------------------------------------------------
+-- завершение возврата
+-----------------------------------------------------------
+SOAP: S_Order_CompleteRefund(Login, Password, Session, Request)
+REST: /REST/Seance/Order/CompleteRefund
+
+#Request
+
+	<Request>
+		<Order Id="4">
+			<Seats>
+				<Seat Id="10353" Cost="1000.00"/>
+				<Seat Id="10354" Cost="1000.00"/>
+			</Seats>
+		</Order>
+	</Request>
+	
+	Cost			Цена возврата, может быть либо ценой продажи, либо ценой с удержанием RefundCost
+
+#Answer
+
+	<Answer dtNow="2020-11-04T19:18:45.063">
+		<Order Id="4">
+			<Info SiteOrderId="XXX" Comment="прмер" />
+			<Customer Name="Иванов Иван Иванович" Phone="+79261234567" EMail="ivan@test.com" />
+			<Delivery Address="Мой адрес не дом и не улица" City="Москва" Metro="Каширская" />
+			<Seats>
+				<Seance Id="15" dtSeance="2020-12-25T19:00:00" TheatreId="1" Theatre="Тест" Hall="Сцена1" Show="Я от бабушки ушел" IsPointArrival="1" IsPointPayment="1">
+					<Sector Id="4" Name="Сектор Т01">
+						<Seat Id="10353" Row="3" Seat="6" SoldCost="1000.00" RefundCost="1000.00" Status="REFUNDED" />
+						<Seat Id="10354" Row="3" Seat="7" SoldCost="1000.00" RefundCost="1000.00" Status="REFUNDED" />
+					</Sector>
+				</Seance>
+			</Seats>
+			<Remove>
+				<Seat Id="10353" />
+				<Seat Id="10354" />
+			</Remove>
+		</Order>
+	</Answer>
+
+	Order->Id						идентификатор заказа
+	Info->TransactionId				идентификатор транзакции оплаты
+	Info->SiteOrderId				идентификатор заказа на стороне сайта
+	Info->Comment					комментарий к заказу
+	Customer->Name					зритель
+	Customer->Phone
+	Customer->EMail
+	Customer->Points				кол-во активированных бонусных баллов на счету пользователя
+	Delivery->Address				доставка
+	Delivery->City
+	Delivery->Metro
+	Seats->Seance->Id				идентификатор мероприятия
+	Seats->Seance->dtSeance			дата мероприятия
+	Seats->Seance->TheatreId		театр
+	Seats->Seance->Theatre
+	Seats->Seance->TheatreAddress
+	Seats->Seance->Hall				зал
+	Seats->Seance->HallAddress
+	Seats->Seance->Show				наименование мероприятия
+	Seats->Seance->SupplierId		поставщик мероприятия
+	Seats->Seance->SupplierName
+	Seats->Seance->SupplierINN
+	Seats->Seance->SupplierAddress
+	Seats->Seance->IsPointArrival	доступно накопление баллов
+	Seats->Seance->IsPointPayment	возможна оплата бонусами
+	Seats->Sector->Id				сектор
+	Seats->Sector->Name
+	Seats->Seat->Id					место
+	Seats->Seat->Row
+	Seats->Seat->Seat
+	Seats->Seat->SoldCost			сумма для продажи
+	Seats->Seat->RefundCost			сумма для возврата с учетом удержания (если есть)
+	Seats->Seat->MaxPoints			сколько максимально можно оплатить баллами
+	Seats->Seat->dtDrop				когда место будет удалено из брони, если не будет оплаченно
+	Seats->Seat->Barcode			баркод для билета
+	Seats->Seat->Status				текущий статус места в заказе
+		ORDERED		Забронировано
+		PAID		Оплачено
+		GIVEN OUT	Выдано
+		CANCELLED	Отменено
+		REFUNDED	Возвращено
+	Remove->Seat->Id				удаленные места из заказа текущей операцией
+
+-----------------------------------------------------------
+-- Подтверждение регистрации в программе лояльности
+-----------------------------------------------------------
+SOAP: LP_Register(Login, Password, Session, Request)
+REST: /REST/LoyaltyProgram/Register
+
+#Request
+
+	<Request LoyaltyProgramCard="123" Name1="test" Name2="asd" Name3="zxc" Phone="123" Mail="qwe@asd.zxc"/>
+
+#Answer
+
+	<Answer dtNow="2020-11-04T20:01:40.423">
+		<Customer Id="73" LoyaltyProgramCard="123" Name1="test" Name2="asd" Name3="zxc" Phone="123" Mail="qwe@asd.zxc" />
+	</Answer>
+
+-----------------------------------------------------------
+-- Информация о бонусах
+-----------------------------------------------------------
+SOAP: LP_Info(Login, Password, Session, Request)
+REST: /REST/LoyaltyProgram/Info
+
+#Request
+
+	<Request LoyaltyProgramCard="912345678"/>
+
+	LoyaltyProgramCard			карта лояльности
+#Answer
+
+	<Answer dtNow="2020-11-04T19:34:58.530">
+		<Customer Id="73" Name="test asd zxc" LoyaltyProgramCard="123">
+			<Points Count="100" Status="ADD" dtDate="2020-10-30T17:27:50.620" />
+			<Points Count="100" Status="ADD" dtDate="2020-10-30T17:27:50.620" />
+			<Points Count="100" Status="ACTIVE" dtDate="2020-10-30T17:28:49.503" />
+			<Points Count="100" Status="ACTIVE" dtDate="2020-10-30T17:28:49.503" />
+			<Points Count="10400" Status="WRITEOFF" dtDate="2020-10-30T17:34:38.233" />
+			<Points Count="100" Status="ADD" dtDate="2020-10-30T17:37:15.777" />
+			<Points Count="100" Status="ADD" dtDate="2020-10-30T17:37:15.777" />
+			<Points Count="100" Status="ACTIVE" dtDate="2020-10-30T17:37:24.527" />
+			<Points Count="100" Status="ACTIVE" dtDate="2020-10-30T17:37:24.527" />
+			<Points Count="100" Status="ADD" dtDate="2020-10-30T17:45:08.343" />
+			<Points Count="100" Status="ADD" dtDate="2020-10-30T17:45:08.343" />
+			<Points Count="100" Status="ACTIVE" dtDate="2020-10-30T17:45:49.060" />
+			<Points Count="100" Status="ACTIVE" dtDate="2020-10-30T17:45:49.060" />
+			<Points Count="100" Status="WRITEOFF" dtDate="2020-11-03T13:18:54.620" />
+		</Customer>
+	</Answer>
+
+	Status						действие
+		ADD						начисление баллов
+		ACTIVE					активация баллов (теперь они доступны для траты)
+		WRITEOFF				списание баллов (оплата покупок)
+		TIMEOUT					списакние балов по истечении времени активности

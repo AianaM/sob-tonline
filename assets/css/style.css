@@ -1,0 +1,97 @@
+/*test ver*/
+.elevation, .elevation-ch > div {
+    box-shadow: rgba(0, 0, 0, 0.15) 0px 2px 8px;
+}
+
+#seance-hall {
+    position: relative;
+    width: 100%;
+    overflow-x: scroll;
+}
+
+#seance-hall .seat, #seance-hall .row {
+    position: absolute;
+    padding: 5px;
+    height: 30px;
+    font-size: 0.7em;
+    display: flex;
+    align-items: center;
+}
+
+#seance-hall .seat {
+    width: 30px;
+    border: #9D9C9C 1px solid;
+    justify-content: center;
+}
+
+#seance-hall .row {
+    width: 55px;
+    justify-content: flex-end;
+}
+
+#seance-hall .seat[data-isenable="0"] {
+    cursor: default;
+    background: #DADADA;
+}
+
+.overlay {
+    display: none;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    z-index: 999;
+    /*background: blue;*/
+}
+
+body.loading {
+    overflow: hidden;
+}
+
+body.loading .overlay {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    /*pacity: 0.4;*/
+    background: rgba(60, 60, 59, 0.4);
+}
+
+@media (max-width: 1023px) {
+    #seance-list-block section.seance-block,
+    #seance-dt-list section.seance-dt-block {
+        padding: 10px 0;
+    }
+}
+
+/*<div class="lds-circle"><div></div></div>*/
+.lds-circle {
+    display: inline-block;
+    transform: translateZ(1px);
+}
+
+.lds-circle > div {
+    display: inline-block;
+    width: 64px;
+    height: 64px;
+    margin: 8px;
+    border-radius: 50%;
+    background: #fff;
+    animation: lds-circle 2.4s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+@keyframes lds-circle {
+    0%, 100% {
+        animation-timing-function: cubic-bezier(0.5, 0, 1, 0.5);
+    }
+    0% {
+        transform: rotateY(0deg);
+    }
+    50% {
+        transform: rotateY(1800deg);
+        animation-timing-function: cubic-bezier(0, 0.5, 0.5, 1);
+    }
+    100% {
+        transform: rotateY(3600deg);
+    }
+}
